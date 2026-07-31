@@ -1,0 +1,85 @@
+{
+  "name": "flexorder-e2e-automation",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report",
+    "test:ci:full": "cross-env CI=true playwright test",
+    "lint": "eslint . --ext .js,.ts",
+    "lint:fix": "eslint . --ext .js,.ts --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "type-check": "tsc --noEmit",
+    "setup:ci": "npx ts-node scripts/setup-ci-environment.ts",
+    "verify:dispatch": "npx ts-node scripts/verify-dispatch-config.ts",
+    "clean": "rm -rf test-results playwright-report node_modules/.cache",
+    "validate": "npm run type-check && npm run lint && npm run format:check"
+  },
+  "keywords": [
+    "playwright",
+    "automation",
+    "woocommerce",
+    "google-sheets",
+    "testing",
+    "flexorder",
+    "e2e",
+    "wordpress",
+    "ci-cd",
+    "docker"
+  ],
+  "author": "",
+  "license": "ISC",
+  "description": "Comprehensive automation suite for FlexOrder plugin integration with WooCommerce and Google Sheets",
+  "devDependencies": {
+    "@axe-core/playwright": "^4.9.0",
+    "@faker-js/faker": "^9.9.0",
+    "@playwright/test": "^1.56.1",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.1",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "cross-env": "^7.0.3",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-playwright": "^1.5.0",
+    "husky": "^9.0.11",
+    "js-yaml": "^4.1.1",
+    "lint-staged": "^15.2.2",
+    "prettier": "^3.2.5",
+    "ts-node": "^10.9.2"
+  },
+  "dependencies": {
+    "@woocommerce/woocommerce-rest-api": "^1.0.2",
+    "axios": "^1.12.2",
+    "dotenv": "^16.4.7",
+    "google-spreadsheet": "^4.1.4",
+    "googleapis": "^144.0.0",
+    "mysql2": "^3.9.2",
+    "playwright": "^1.50.1"
+  },
+  "lint-staged": {
+    ".{js,ts}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    ".{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wppool/flexorder-e2e-automation.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wppool/flexorder-e2e-automation/issues"
+  },
+  "homepage": "https://github.com/wppool/flexorder-e2e-automation#readme"
+}

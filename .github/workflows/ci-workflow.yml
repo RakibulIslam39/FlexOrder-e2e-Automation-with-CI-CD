@@ -1,0 +1,1163 @@
+name: FlexOrder CI/CD Pipeline
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, qa]
+  repository_dispatch:
+    types: [flexorder, flexorder-ultimate]
+  # schedule:
+  #   - cron: '0 2 * * *'  # Daily at 2 AM UTC
+
+env:
+  NODE_VERSION: '18'
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+  # WordPress configuration
+  WORDPRESS_URL: http://localhost:8080
+  WORDPRESS_ADMIN_USER: admin
+  WORDPRESS_ADMIN_PASSWORD: admin123
+  WORDPRESS_ADMIN_EMAIL: admin@example.com
+
+permissions:
+  contents: read
+  actions: read
+  packages: read
+
+# Cancel in-progress runs for the same branch
+concurrency:
+  group: ci-flexorder-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  setup-wordpress:
+    name: Setup WordPress, Deploy Plugins, Run E2E Tests, Report
+    runs-on: self-hosted
+    # Evaluate SMTP configuration once at job-level so subsequent steps can
+    # gate notification sends on `env.SMTP_CONFIGURED == 'true'` reliably.
+    # (Step-level env is resolved AFTER the step's `if:` expression, which
+    # was the reason the old condition never fired.)
+    env:
+      SMTP_CONFIGURED: ${{ secrets.SMTP_SERVER != '' && secrets.EMAIL_TO != '' }}
+    steps:
+      # ========================================================================
+      # CHECKOUT & SETUP
+      # ========================================================================
+
+      - name: 📥 Checkout CI Workflow Repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 📊 Display Workflow Information
+        shell: powershell
+        run: |
+          Write-Host "============================================================"
+          Write-Host "🚀 FlexOrder CI/CD Pipeline Started" -ForegroundColor Cyan
+          Write-Host "============================================================"
+          Write-Host ""
+          Write-Host "[Info] Workflow Details:"
+          Write-Host "   Test Suite    : FlexOrder E2E Full"
+          Write-Host "   Branch        : ${{ github.ref_name }}"
+          Write-Host "   Trigger       : ${{ github.event_name }}"
+          Write-Host "   Run ID        : ${{ github.run_id }}"
+          Write-Host "   Runner        : ${{ runner.name }}"
+          Write-Host "   Started At    : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+          Write-Host ""
+
+          if ("${{ github.event_name }}" -eq "repository_dispatch") {
+            Write-Host "[Package] Plugin Update Trigger:" -ForegroundColor Yellow
+            Write-Host "   Event Type  : ${{ github.event.action }}"
+            Write-Host "   Repository  : ${{ github.event.client_payload.repository }}"
+            Write-Host "   Branch      : ${{ github.event.client_payload.branch }}"
+            Write-Host "   Commit SHA  : ${{ github.event.client_payload.sha }}"
+            Write-Host "   Pushed By   : ${{ github.event.client_payload.pusher }}"
+            Write-Host "   Commit Msg  : ${{ github.event.client_payload.commit_message }}"
+
+          }
+          Write-Host ""
+          Write-Host "============================================================"
+
+      # ========================================================================
+      # NODE.JS & DEPENDENCIES
+      # ========================================================================
+
+      - name: ⚙️  Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install NPM Dependencies
+        shell: powershell
+        run: |
+          Write-Host "[Package] Installing NPM dependencies..." -ForegroundColor Cyan
+          npm ci --prefer-offline --no-audit
+          Write-Host "✅ Dependencies installed successfully" -ForegroundColor Green
+
+      - name: 🎭 Install Playwright Browsers
+        shell: powershell
+        run: |
+          Write-Host "🎭 Installing Playwright browsers..." -ForegroundColor Cyan
+          npx playwright install --with-deps chromium
+          Write-Host "✅ Playwright browsers installed" -ForegroundColor Green
+
+      # ========================================================================
+      # CACHING
+      # ========================================================================
+
+      - name: 💾 Cache Docker Layers
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\.buildx-cache
+          key: docker-${{ runner.os }}-${{ hashFiles('docker-compose.fresh-wordpress.yml') }}
+          restore-keys: |
+            docker-${{ runner.os }}-
+
+      - name: 💾 Cache Playwright
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}\ms-playwright
+            ${{ runner.temp }}\npm
+          key: playwright-${{ runner.os }}-${{ env.NODE_VERSION }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-${{ env.NODE_VERSION }}-
+            playwright-${{ runner.os }}-
+
+      # ========================================================================
+      # DOCKER ENVIRONMENT
+      # ========================================================================
+
+      - name: 🧹 Clean Up Existing Docker Resources
+        shell: powershell
+        run: |
+          Write-Host "🧹 Cleaning up Docker environment..." -ForegroundColor Cyan
+
+          # Set error action to continue on errors
+          $ErrorActionPreference = 'SilentlyContinue'
+
+          # Stop and remove containers
+          $containers = @('flexorder-wordpress', 'flexorder-mysql', 'flexorder-phpmyadmin', 'flexorder-mailhog')
+          foreach ($container in $containers) {
+            docker stop $container 2>$null | Out-Null
+            docker rm -f $container 2>$null | Out-Null
+          }
+
+          # Remove networks and volumes
+          docker network rm flexorder-ci-workflow_flexorder-network 2>$null | Out-Null
+          docker volume rm flexorder-ci-workflow_wordpress_data 2>$null | Out-Null
+          docker volume rm flexorder-ci-workflow_mysql_data 2>$null | Out-Null
+
+          # Compose cleanup
+          if (Test-Path "docker-compose.fresh-wordpress.yml") {
+            docker compose -f docker-compose.fresh-wordpress.yml down -v --remove-orphans 2>$null | Out-Null
+          }
+
+          # Scoped cleanup: prune only dangling images/build cache belonging to
+          # this project. NEVER run `docker system prune --volumes` on a
+          # self-hosted runner — it will wipe state for every other repo
+          # sharing the host. Volumes for this run were already removed above.
+          docker image prune -f --filter "label=com.docker.compose.project=flexorder-ci-workflow" 2>$null | Out-Null
+          docker builder prune -f --keep-storage 5GB 2>$null | Out-Null
+
+          # Reset error action and ensure success exit
+          $ErrorActionPreference = 'Stop'
+          Write-Host "✅ Docker cleanup completed" -ForegroundColor Green
+          exit 0
+
+      - name: 🐳 Start Docker Services
+        shell: powershell
+        run: |
+          Write-Host "🐳 Starting WordPress and MySQL services..." -ForegroundColor Cyan
+          docker compose -f docker-compose.fresh-wordpress.yml up -d
+
+          Write-Host ""
+          Write-Host "[Stats] Docker Services Status:" -ForegroundColor Yellow
+          docker compose -f docker-compose.fresh-wordpress.yml ps
+
+          Write-Host ""
+          Write-Host "✅ Docker services started" -ForegroundColor Green
+
+      - name: ⏳ Wait for Services to be Ready
+        shell: powershell
+        run: |
+          Write-Host "⏳ Waiting for services to be ready..." -ForegroundColor Cyan
+          Write-Host ""
+
+          # Function for retrying commands with exponential backoff
+          function Invoke-WithRetry {
+            param(
+              [Parameter(Mandatory=$true)]
+              [scriptblock]$Command,
+              
+              [int]$MaxRetries = 12,
+              [int]$BaseDelay = 2,
+              [string]$ServiceName = "Service"
+            )
+            
+            for ($i = 1; $i -le $MaxRetries; $i++) {
+              try {
+                & $Command
+                Write-Host "✅ $ServiceName is ready!" -ForegroundColor Green
+                return $true
+              } catch {
+                if ($i -eq $MaxRetries) {
+                  Write-Host "❌ $ServiceName failed to start after $MaxRetries attempts" -ForegroundColor Red
+                  throw "$ServiceName failed to start"
+                }
+                $delay = [math]::Pow($BaseDelay, [math]::Min($i, 4))
+                Write-Host "⏳ $ServiceName check $i/$MaxRetries failed, retrying in $delay seconds..." -ForegroundColor Yellow
+                Start-Sleep -Seconds $delay
+              }
+            }
+            return $false
+          }
+
+          # Wait for MySQL
+          Write-Host "[Search] Checking MySQL..." -ForegroundColor Cyan
+          Invoke-WithRetry -ServiceName "MySQL" -Command {
+            docker exec flexorder-mysql mysqladmin ping -h localhost --silent
+            if ($LASTEXITCODE -ne 0) { throw "MySQL not ready" }
+          }
+
+          Write-Host ""
+
+          # Wait for WordPress
+          Write-Host "[Search] Checking WordPress..." -ForegroundColor Cyan
+          Invoke-WithRetry -ServiceName "WordPress" -MaxRetries 20 -Command {
+            $response = Invoke-WebRequest -Uri "$env:WORDPRESS_URL" -UseBasicParsing -TimeoutSec 10
+            if ($response.StatusCode -ne 200) { throw "WordPress not ready" }
+          }
+
+          Write-Host ""
+          Write-Host "✅ All services are ready!" -ForegroundColor Green
+
+      # ========================================================================
+      # GITHUB APP TOKEN FOR PLUGIN ACCESS
+      # ========================================================================
+
+      - name: 🔐 Generate GitHub App Token
+        id: app-token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.APP_ID }}
+          private_key: ${{ secrets.APP_PRIVATE_KEY }}
+          installation_retrieval_mode: repository
+          installation_retrieval_payload: WPPOOL/flexorder
+          repositories: '["flexorder","flexorder-ultimate"]'
+
+      # ========================================================================
+      # PLUGIN BRANCH DETERMINATION
+      # ========================================================================
+
+      - name: 🌿 Determine Plugin Branch
+        id: plugin-branch
+        shell: powershell
+        run: |
+          $triggerType = "${{ github.event_name }}"
+          Write-Host "[Refresh] Trigger Type: $triggerType" -ForegroundColor Cyan
+          Write-Host ""
+
+          if ($triggerType -eq "repository_dispatch") {
+            # Triggered by plugin repository update
+            $pluginBranch = "${{ github.event.client_payload.branch }}"
+            $triggerRepo = "${{ github.event.client_payload.repository }}"
+            $triggerSha = "${{ github.event.client_payload.sha }}"
+            
+            Write-Host "[Refresh] Plugin Update Trigger:" -ForegroundColor Yellow
+            Write-Host "   Repository : $triggerRepo"
+            Write-Host "   Branch     : $pluginBranch"
+            Write-Host "   SHA        : $triggerSha"
+            
+            "plugin_branch=$pluginBranch" | Add-Content -Path $env:GITHUB_OUTPUT
+            "trigger_repo=$triggerRepo" | Add-Content -Path $env:GITHUB_OUTPUT
+            "trigger_sha=$triggerSha" | Add-Content -Path $env:GITHUB_OUTPUT
+            
+          } else {
+            # Triggered by CI repo push - use branch mapping
+            $workflowBranch = "${{ github.ref_name }}"
+            
+            $pluginBranch = switch ($workflowBranch) {
+              "main"    { "main"; Write-Host "🌿 Using main branch for plugins (production)" -ForegroundColor Green }
+              "develop" { "develop"; Write-Host "🌿 Using develop branch for plugins (development)" -ForegroundColor Green }
+              "qa"      { "develop"; Write-Host "🌿 Using develop branch for plugins (QA)" -ForegroundColor Green }
+              default   { "main"; Write-Host "🌿 Using main branch for plugins (fallback)" -ForegroundColor Yellow }
+            }
+            
+            "plugin_branch=$pluginBranch" | Add-Content -Path $env:GITHUB_OUTPUT
+            "trigger_repo=ci-workflow" | Add-Content -Path $env:GITHUB_OUTPUT
+            "trigger_sha=${{ github.sha }}" | Add-Content -Path $env:GITHUB_OUTPUT
+          }
+
+          Write-Host ""
+          Write-Host "✅ Plugin branch determined: $pluginBranch" -ForegroundColor Green
+
+      # ========================================================================
+      # DOWNLOAD & DEPLOY PLUGINS
+      # ========================================================================
+
+      - name: 📦 Download FlexOrder Free Plugin
+        shell: powershell
+        run: |
+          $pluginBranch = "${{ steps.plugin-branch.outputs.plugin_branch }}"
+          Write-Host "[Package] Downloading FlexOrder Free Plugin (branch: $pluginBranch)..." -ForegroundColor Cyan
+
+          $headers = @{
+            'Authorization' = 'Bearer ${{ steps.app-token.outputs.token }}'
+            'Accept' = 'application/vnd.github+json'
+          }
+
+          try {
+            $url = "https://api.github.com/repos/WPPOOL/flexorder/zipball/$pluginBranch"
+            Invoke-WebRequest -Uri $url -OutFile 'flexorder.zip' -Headers $headers
+            
+            $fileSize = (Get-Item 'flexorder.zip').Length / 1MB
+            Write-Host "✅ Downloaded: flexorder.zip ($([math]::Round($fileSize, 2)) MB)" -ForegroundColor Green
+            
+          } catch {
+            Write-Host "⚠️  Failed to download from $pluginBranch branch" -ForegroundColor Yellow
+            Write-Host "[Refresh] Falling back to main branch..." -ForegroundColor Yellow
+            
+            $url = "https://api.github.com/repos/WPPOOL/flexorder/zipball/main"
+            Invoke-WebRequest -Uri $url -OutFile 'flexorder.zip' -Headers $headers
+            
+            Write-Host "✅ Downloaded from main branch (fallback)" -ForegroundColor Green
+          }
+
+      - name: 📦 Download FlexOrder Pro Plugin
+        shell: powershell
+        run: |
+          $pluginBranch = "${{ steps.plugin-branch.outputs.plugin_branch }}"
+          Write-Host "[Package] Downloading FlexOrder Pro Plugin (branch: $pluginBranch)..." -ForegroundColor Cyan
+
+          $headers = @{
+            'Authorization' = 'Bearer ${{ steps.app-token.outputs.token }}'
+            'Accept' = 'application/vnd.github+json'
+          }
+
+          try {
+            $url = "https://api.github.com/repos/WPPOOL/flexorder-ultimate/zipball/$pluginBranch"
+            Invoke-WebRequest -Uri $url -OutFile 'flexorder-ultimate.zip' -Headers $headers
+            
+            $fileSize = (Get-Item 'flexorder-ultimate.zip').Length / 1MB
+            Write-Host "✅ Downloaded: flexorder-ultimate.zip ($([math]::Round($fileSize, 2)) MB)" -ForegroundColor Green
+            
+          } catch {
+            Write-Host "⚠️  Failed to download from $pluginBranch branch" -ForegroundColor Yellow
+            Write-Host "[Refresh] Falling back to main branch..." -ForegroundColor Yellow
+            
+            $url = "https://api.github.com/repos/WPPOOL/flexorder-ultimate/zipball/main"
+            Invoke-WebRequest -Uri $url -OutFile 'flexorder-ultimate.zip' -Headers $headers
+            
+            Write-Host "✅ Downloaded from main branch (fallback)" -ForegroundColor Green
+          }
+
+      - name: 📋 Copy Plugins to WordPress Container
+        shell: powershell
+        run: |
+          Write-Host "[Info] Copying plugin files to WordPress container..." -ForegroundColor Cyan
+
+          docker cp flexorder.zip flexorder-wordpress:/tmp/flexorder.zip
+          docker cp flexorder-ultimate.zip flexorder-wordpress:/tmp/flexorder-ultimate.zip
+
+          Write-Host "✅ Plugin files copied to container" -ForegroundColor Green
+
+      # ========================================================================
+      # WORDPRESS & PLUGIN INSTALLATION
+      # ========================================================================
+
+      - name: 🔧 Install WordPress and Plugins
+        shell: powershell
+        run: |
+          Write-Host "[Config] Setting up WordPress environment..." -ForegroundColor Cyan
+          Write-Host ""
+
+          # Wait for container health
+          Write-Host "⏳ Waiting for WordPress container health check..." -ForegroundColor Cyan
+          for ($i = 1; $i -le 30; $i++) {
+            $health = docker inspect flexorder-wordpress --format='{{.State.Health.Status}}' 2>$null
+            if ($health -eq "healthy") {
+              Write-Host "✅ WordPress container is healthy" -ForegroundColor Green
+              break
+            }
+            if ($i -eq 30) {
+              Write-Host "❌ Container failed health check" -ForegroundColor Red
+              docker logs flexorder-wordpress --tail 50
+              exit 1
+            }
+            Write-Host "⏳ Health check $i/30..." -ForegroundColor Yellow
+            Start-Sleep -Seconds 10
+          }
+
+          Write-Host ""
+
+          # Ensure WP-CLI is available
+          Write-Host "[Search] Verifying WP-CLI installation..." -ForegroundColor Cyan
+          docker exec flexorder-wordpress bash -c 'command -v wp || (curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && chmod +x wp-cli.phar && mv wp-cli.phar /usr/local/bin/wp)'
+          Write-Host "✅ WP-CLI is available" -ForegroundColor Green
+
+          Write-Host ""
+
+          # Install WordPress core
+          Write-Host "[Package] Installing WordPress core..." -ForegroundColor Cyan
+          # Use 2>&1 to merge stderr into stdout (prevents NativeCommandError from PHP warnings)
+          # GitHub Actions sets $ErrorActionPreference='Stop' so 2>$null is insufficient
+          $null = docker exec flexorder-wordpress wp core is-installed --allow-root 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            docker exec flexorder-wordpress wp core install `
+              --url="$env:WORDPRESS_URL" `
+              --title="FlexOrder Test Site" `
+              --admin_user="$env:WORDPRESS_ADMIN_USER" `
+              --admin_password="$env:WORDPRESS_ADMIN_PASSWORD" `
+              --admin_email="$env:WORDPRESS_ADMIN_EMAIL" `
+              --skip-email `
+              --allow-root
+            Write-Host "✅ WordPress core installed" -ForegroundColor Green
+          } else {
+            Write-Host "✅ WordPress core already installed" -ForegroundColor Green
+          }
+
+          Write-Host ""
+
+          # Configure WordPress URLs
+          Write-Host "⚙️  Configuring WordPress URLs..." -ForegroundColor Cyan
+          docker exec flexorder-wordpress wp option update siteurl "$env:WORDPRESS_URL" --allow-root
+          docker exec flexorder-wordpress wp option update home "$env:WORDPRESS_URL" --allow-root
+          Write-Host "✅ WordPress URLs configured" -ForegroundColor Green
+
+          Write-Host ""
+
+          # Clean up existing plugin directories
+          Write-Host "🧹 Cleaning up old plugin installations..." -ForegroundColor Cyan
+          docker exec flexorder-wordpress bash -c 'rm -rf /var/www/html/wp-content/plugins/WPPOOL-flexorder-* /var/www/html/wp-content/plugins/flexorder* 2>/dev/null || true'
+          Write-Host "✅ Old plugins removed" -ForegroundColor Green
+
+          Write-Host ""
+
+          # Install WooCommerce
+          Write-Host "🛒 Installing WooCommerce..." -ForegroundColor Cyan
+          docker exec flexorder-wordpress wp plugin install woocommerce --activate --allow-root --force
+          Write-Host "✅ WooCommerce installed and activated" -ForegroundColor Green
+
+          Write-Host ""
+
+          # Install FlexOrder plugins
+          Write-Host "[Package] Installing FlexOrder Free Plugin..." -ForegroundColor Cyan
+          docker exec flexorder-wordpress wp plugin install /tmp/flexorder.zip --activate --allow-root --force
+          Write-Host "✅ FlexOrder Free Plugin installed" -ForegroundColor Green
+
+          Write-Host ""
+
+          Write-Host "[Package] Installing FlexOrder Pro Plugin..." -ForegroundColor Cyan
+          docker exec flexorder-wordpress wp plugin install /tmp/flexorder-ultimate.zip --activate --allow-root --force
+          Write-Host "✅ FlexOrder Pro Plugin installed" -ForegroundColor Green
+
+          Write-Host ""
+
+          # Verify plugin activation
+          Write-Host "[Search] Verifying plugin activation..." -ForegroundColor Cyan
+          # Capture only stdout lines that are valid JSON (filter out any PHP warnings on stderr)
+          $pluginOutput = docker exec flexorder-wordpress wp plugin list --status=active --format=json --allow-root 2>&1
+          $jsonLine = ($pluginOutput | Where-Object { $_ -match '^\s*\[' }) -join ''
+          $activePlugins = $jsonLine | ConvertFrom-Json
+
+          $flexorderActive = $activePlugins | Where-Object { $_.name -like "*flexorder*" }
+
+          if ($flexorderActive) {
+            Write-Host "✅ FlexOrder plugins are active:" -ForegroundColor Green
+            $flexorderActive | ForEach-Object {
+              Write-Host "   • $($_.title) (v$($_.version))" -ForegroundColor Cyan
+            }
+          } else {
+            Write-Host "❌ FlexOrder plugins not activated" -ForegroundColor Red
+            Write-Host "Available plugins:" -ForegroundColor Yellow
+            docker exec flexorder-wordpress wp plugin list --allow-root
+            exit 1
+          }
+
+          Write-Host ""
+          Write-Host "✅ WordPress and plugins setup completed successfully!" -ForegroundColor Green
+
+      # ========================================================================
+      # PROVISION TEST DATA & API KEYS
+      # ========================================================================
+
+      - name: 🎲 Provision Test Environment
+        shell: powershell
+        run: |
+          Write-Host "🎲 Provisioning test environment..." -ForegroundColor Cyan
+          Write-Host ""
+
+          npx ts-node scripts/setup-ci-environment.ts
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ Environment provisioning failed" -ForegroundColor Red
+            exit 1
+          }
+
+          Write-Host ""
+          Write-Host "✅ Test environment provisioned successfully" -ForegroundColor Green
+
+      - name: 🔑 Extract and Validate API Keys
+        id: api-keys
+        shell: powershell
+        run: |
+          Write-Host "[Key] Extracting WooCommerce API keys..." -ForegroundColor Cyan
+          Write-Host ""
+
+          $apiKeysPath = "tests/fixtures/api-keys.json"
+
+          # Verify file exists
+          if (-not (Test-Path $apiKeysPath)) {
+            Write-Host "❌ API keys file not found: $apiKeysPath" -ForegroundColor Red
+            Write-Host "The setup script may have failed" -ForegroundColor Yellow
+            exit 1
+          }
+
+          # Parse API keys
+          try {
+            $apiKeys = Get-Content $apiKeysPath -Raw | ConvertFrom-Json
+            
+            $consumerKey = $apiKeys.consumer_key
+            $consumerSecret = $apiKeys.consumer_secret
+            
+            # Validate keys
+            if ([string]::IsNullOrWhiteSpace($consumerKey) -or [string]::IsNullOrWhiteSpace($consumerSecret)) {
+              Write-Host "❌ API keys are empty or invalid" -ForegroundColor Red
+              Write-Host "File content:" -ForegroundColor Yellow
+              Get-Content $apiKeysPath
+              exit 1
+            }
+            
+            # Set outputs for subsequent steps
+            "consumer_key=$consumerKey" | Add-Content -Path $env:GITHUB_OUTPUT
+            "consumer_secret=$consumerSecret" | Add-Content -Path $env:GITHUB_OUTPUT
+            
+            # Set environment variables
+            "WOOCOMMERCE_CONSUMER_KEY=$consumerKey" | Add-Content -Path $env:GITHUB_ENV
+            "WOOCOMMERCE_CONSUMER_SECRET=$consumerSecret" | Add-Content -Path $env:GITHUB_ENV
+            
+            Write-Host "✅ API keys extracted and validated" -ForegroundColor Green
+            Write-Host ""
+            Write-Host "[Info] API Key Details:" -ForegroundColor Cyan
+            Write-Host "   Consumer Key    : $consumerKey"
+            Write-Host "   Consumer Secret : $($consumerSecret.Substring(0,20))... (truncated)"
+            Write-Host "   Site URL        : $($apiKeys.site_url)"
+            Write-Host "   Created At      : $($apiKeys.created_at)"
+            Write-Host ""
+            
+          } catch {
+            Write-Host "❌ Failed to parse API keys file" -ForegroundColor Red
+            Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "File content:" -ForegroundColor Yellow
+            Get-Content $apiKeysPath
+            exit 1
+          }
+
+      - name: ✅ Validate Test Environment
+        shell: powershell
+        run: |
+          Write-Host "✅ Validating test environment..." -ForegroundColor Cyan
+          Write-Host ""
+
+          # Check API keys file
+          if (Test-Path "tests/fixtures/api-keys.json") {
+            $apiKeys = Get-Content "tests/fixtures/api-keys.json" | ConvertFrom-Json
+            Write-Host "✅ API keys file valid: $($apiKeys.consumer_key)" -ForegroundColor Green
+          } else {
+            Write-Host "❌ API keys file missing" -ForegroundColor Red
+            exit 1
+          }
+
+          # Check WordPress accessibility
+          try {
+            $response = Invoke-WebRequest -Uri "$env:WORDPRESS_URL/wp-admin/" -UseBasicParsing -TimeoutSec 10
+            Write-Host "✅ WordPress is accessible (HTTP $($response.StatusCode))" -ForegroundColor Green
+          } catch {
+            Write-Host "⚠️  WordPress accessibility check failed (non-critical)" -ForegroundColor Yellow
+          }
+
+          Write-Host ""
+          Write-Host "✅ Environment validation complete" -ForegroundColor Green
+
+      # ========================================================================
+      # RUN E2E TESTS
+      # ========================================================================
+
+      - name: 🧪 Run E2E Tests
+        shell: powershell
+        timeout-minutes: 60
+        run: |
+          Write-Host "============================================================" -ForegroundColor Cyan
+          Write-Host "🧪 Starting FlexOrder E2E Test Suite" -ForegroundColor Cyan
+          Write-Host "============================================================" -ForegroundColor Cyan
+          Write-Host ""
+
+          Write-Host "[Stats] Test Configuration:" -ForegroundColor Yellow
+          Write-Host "   Base URL        : $env:PLAYWRIGHT_BASE_URL"
+          Write-Host "   Admin URL       : $env:ADMIN_PANEL_URL"
+          Write-Host "   Admin User      : $env:USER_NAME"
+          Write-Host "   Consumer Key    : $env:WOOCOMMERCE_CONSUMER_KEY"
+          Write-Host "   Test Timeout    : 60 minutes"
+          Write-Host "   Workers         : Auto-detected"
+          Write-Host ""
+
+          Write-Host "🚀 Starting Playwright tests..." -ForegroundColor Cyan
+          Write-Host ""
+
+          try {
+            npm run test:ci:full
+            
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host ""
+              Write-Host "❌ Tests failed with exit code: $LASTEXITCODE" -ForegroundColor Red
+              
+              # Show test artifacts
+              if (Test-Path "test-results") {
+                Write-Host ""
+                Write-Host "[Info] Test Results:" -ForegroundColor Yellow
+                Get-ChildItem "test-results" -Recurse | Select-Object Name, Length, LastWriteTime | Format-Table
+              }
+              
+              if (Test-Path "test-results/test-summary.txt") {
+                Write-Host ""
+                Write-Host "[File] Test Summary:" -ForegroundColor Yellow
+                Get-Content "test-results/test-summary.txt"
+              }
+              
+              exit $LASTEXITCODE
+            }
+            
+            Write-Host ""
+            Write-Host "✅ E2E Tests completed successfully!" -ForegroundColor Green
+            
+          } catch {
+            Write-Host ""
+            Write-Host "❌ Test execution failed: $($_.Exception.Message)" -ForegroundColor Red
+            
+            if (Test-Path "test-results") {
+              Write-Host ""
+              Write-Host "[Dir] Available test artifacts:" -ForegroundColor Yellow
+              Get-ChildItem "test-results" -Recurse | Select-Object Name, Length | Format-Table
+            }
+            
+            exit 1
+          }
+        env:
+          CI: true
+          SITE_URL: ${{ env.WORDPRESS_URL }}
+          PLAYWRIGHT_BASE_URL: ${{ env.WORDPRESS_URL }}
+          ADMIN_PANEL_URL: ${{ env.WORDPRESS_URL }}/wp-admin/
+          USER_NAME: ${{ env.WORDPRESS_ADMIN_USER }}
+          PASSWORD: ${{ env.WORDPRESS_ADMIN_PASSWORD }}
+          WOOCOMMERCE_CONSUMER_KEY: ${{ steps.api-keys.outputs.consumer_key }}
+          WOOCOMMERCE_CONSUMER_SECRET: ${{ steps.api-keys.outputs.consumer_secret }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          SHEET_NAME: ${{ secrets.SHEET_NAME }}
+          FLEXORDER_PRO_LICENSE_KEY: ${{ secrets.FLEXORDER_PRO_LICENSE_KEY }}
+
+      # ========================================================================
+      # UPLOAD ARTIFACTS
+      # ========================================================================
+
+      - name: 📤 Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ github.run_id }}
+          retention-days: 7
+          path: |
+            test-results/
+            playwright-report/
+
+      - name: 📸 Upload Screenshots (on failure)
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: failure-screenshots-${{ github.run_id }}
+          retention-days: 7
+          path: test-results/**/*.png
+
+      - name: 📹 Upload Videos (on failure)
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: failure-videos-${{ github.run_id }}
+          retention-days: 7
+          path: test-results/**/*.webm
+
+      # --- Send Report via Email ---
+      # ========================================================================
+      # EMAIL REPORTING
+      # ========================================================================
+
+      - name: 📊 Determine Test Status
+        id: test-status
+        if: always()
+        shell: powershell
+        run: |
+          $testsPassed = "${{ job.status }}" -eq "success"
+
+          if ($testsPassed) {
+            Write-Host "✅ Tests PASSED - preparing success email" -ForegroundColor Green
+            "status=success" | Add-Content -Path $env:GITHUB_OUTPUT
+            "emoji=✅" | Add-Content -Path $env:GITHUB_OUTPUT
+            "subject=✅ FlexOrder E2E Tests PASSED - ${{ github.ref_name }}" | Add-Content -Path $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "❌ Tests FAILED - preparing failure email" -ForegroundColor Red
+            "status=failure" | Add-Content -Path $env:GITHUB_OUTPUT
+            "emoji=❌" | Add-Content -Path $env:GITHUB_OUTPUT
+            "subject=❌ FlexOrder E2E Tests FAILED - ${{ github.ref_name }}" | Add-Content -Path $env:GITHUB_OUTPUT
+          }
+
+      - name: 📧 Send Success Email Report
+        if: always() && steps.test-status.outputs.status == 'success' && env.SMTP_CONFIGURED == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT || 587 }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          from: ci@wppool.dev
+          to: ${{ secrets.EMAIL_TO }}
+          subject: ${{ steps.test-status.outputs.subject }}
+          body: |
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            ✅ FlexOrder E2E Tests PASSED Successfully!
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+            🎉 All test cases executed successfully!
+
+            📋 Test Details:
+               • Branch        : ${{ github.ref_name }}
+               • Trigger       : ${{ github.event_name }}
+               • Commit        : ${{ github.sha }}
+               • Workflow Run  : ${{ github.run_id }}
+               • Runner        : ${{ runner.name }}
+               • Completed At  : ${{ github.event.head_commit.timestamp }}
+
+            🔗 View Full Report:
+            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            📊 Test Report (HTML):
+            See attached Playwright report for detailed results.
+
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            🤖 Automated CI/CD Pipeline - FlexOrder E2E Testing
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          attachments: |
+            ${{ github.workspace }}/playwright-report/index.html
+        continue-on-error: true
+
+      - name: 📧 Send Failure Email Report
+        if: always() && steps.test-status.outputs.status == 'failure' && env.SMTP_CONFIGURED == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT || 587 }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          from: ci@wppool.dev
+          to: ${{ secrets.EMAIL_TO }}
+          subject: ${{ steps.test-status.outputs.subject }}
+          body: |
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            ❌ FlexOrder E2E Tests FAILED
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+            ⚠️  One or more test cases failed during execution.
+
+            📋 Test Details:
+               • Branch        : ${{ github.ref_name }}
+               • Trigger       : ${{ github.event_name }}
+               • Commit        : ${{ github.sha }}
+               • Workflow Run  : ${{ github.run_id }}
+               • Runner        : ${{ runner.name }}
+               • Failed At     : ${{ github.event.head_commit.timestamp }}
+
+            🔗 View Full Report & Logs:
+            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            📊 Failure Artifacts:
+            • Detailed HTML report attached
+            • Screenshots and videos available in GitHub Actions artifacts
+            • JUnit test results attached
+
+            🔧 Next Steps:
+            1. Review the attached HTML report for detailed failure information
+            2. Check screenshots/videos in the GitHub Actions run artifacts
+            3. Examine the test logs for error messages and stack traces
+            4. Fix the failing tests and push the changes
+
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            🤖 Automated CI/CD Pipeline - FlexOrder E2E Testing
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          attachments: |
+            ${{ github.workspace }}/playwright-report/index.html
+            ${{ github.workspace }}/test-results/e2e-junit-results.xml
+        continue-on-error: true
+
+      # ========================================================================
+      # SLACK REPORTING
+      # ========================================================================
+
+      - name: 📊 Determine Test Status for Slack
+        id: slack-test-status
+        if: always()
+        shell: powershell
+        run: |
+          $testsPassed = "${{ job.status }}" -eq "success"
+
+          if ($testsPassed) {
+            Write-Host "✅ Tests PASSED - preparing Slack success notification" -ForegroundColor Green
+            "status=success" | Add-Content -Path $env:GITHUB_OUTPUT
+            "color=#36a64f" | Add-Content -Path $env:GITHUB_OUTPUT
+            "emoji=:white_check_mark:" | Add-Content -Path $env:GITHUB_OUTPUT
+            "status_text=PASSED" | Add-Content -Path $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "❌ Tests FAILED - preparing Slack failure notification" -ForegroundColor Red
+            "status=failure" | Add-Content -Path $env:GITHUB_OUTPUT
+            "color=#ff0000" | Add-Content -Path $env:GITHUB_OUTPUT
+            "emoji=:x:" | Add-Content -Path $env:GITHUB_OUTPUT
+            "status_text=FAILED" | Add-Content -Path $env:GITHUB_OUTPUT
+          }
+
+      - name: 📱 Send Success Notification to Slack
+        if: always() && steps.slack-test-status.outputs.status == 'success' && env.SLACK_CONFIGURED == 'true'
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "text": "✅ FlexOrder E2E Tests PASSED Successfully!",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "✅ FlexOrder E2E Tests PASSED",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "🎉 *All test cases executed successfully!*"
+                  }
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n`${{ github.ref_name }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Trigger:*\n${{ github.event_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:*\n`${{ github.sha }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Workflow Run:*\n${{ github.run_id }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Runner:*\n${{ runner.name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Completed:*\n${{ github.event.head_commit.timestamp }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "📊 View Full Report",
+                        "emoji": true
+                      },
+                      "url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                      "style": "primary"
+                    },
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "📁 View Repository",
+                        "emoji": true
+                      },
+                      "url": "https://github.com/${{ github.repository }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "🤖 Automated CI/CD Pipeline - FlexOrder E2E Testing"
+                    }
+                  ]
+                }
+              ]
+            }
+        continue-on-error: true
+        env:
+          SLACK_CONFIGURED: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+
+      - name: 📱 Send Failure Notification to Slack
+        if: always() && steps.slack-test-status.outputs.status == 'failure' && env.SLACK_CONFIGURED == 'true'
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "text": "❌ FlexOrder E2E Tests FAILED",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "❌ FlexOrder E2E Tests FAILED",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "⚠️ *One or more test cases failed during execution*"
+                  }
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n`${{ github.ref_name }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Trigger:*\n${{ github.event_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:*\n`${{ github.sha }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Workflow Run:*\n${{ github.run_id }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Runner:*\n${{ runner.name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Failed At:*\n${{ github.event.head_commit.timestamp }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*🔧 Next Steps:*\n1. Review the detailed HTML report in GitHub Actions artifacts\n2. Check screenshots/videos for visual debugging\n3. Examine test logs for error messages and stack traces\n4. Fix the failing tests and push changes"
+                  }
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "🔍 View Logs & Report",
+                        "emoji": true
+                      },
+                      "url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                      "style": "danger"
+                    },
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "📥 Download Artifacts",
+                        "emoji": true
+                      },
+                      "url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts"
+                    },
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "📁 View Repository",
+                        "emoji": true
+                      },
+                      "url": "https://github.com/${{ github.repository }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "🤖 Automated CI/CD Pipeline - FlexOrder E2E Testing"
+                    }
+                  ]
+                }
+              ]
+            }
+        continue-on-error: true
+        env:
+          SLACK_CONFIGURED: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+
+  # ============================================================================
+  # CLEANUP JOB
+  # ============================================================================
+
+  cleanup:
+    name: Cleanup
+    runs-on: self-hosted
+    needs: [setup-wordpress]
+    if: always()
+
+    steps:
+      - name: 📥 Checkout (for docker-compose file)
+        uses: actions/checkout@v4
+
+      - name: 🧹 Stop and Remove Docker Resources
+        shell: powershell
+        run: |
+          Write-Host "============================================================" -ForegroundColor Cyan
+          Write-Host "🧹 Cleaning Up Docker Resources" -ForegroundColor Cyan
+          Write-Host "============================================================" -ForegroundColor Cyan
+          Write-Host ""
+
+          # Stop and remove containers
+          Write-Host "🛑 Stopping containers..." -ForegroundColor Yellow
+          $containers = @('flexorder-wordpress', 'flexorder-mysql', 'flexorder-phpmyadmin', 'flexorder-mailhog')
+          foreach ($container in $containers) {
+            try {
+              docker stop $container 2>$null | Out-Null
+              docker rm -f $container 2>$null | Out-Null
+              Write-Host "   OK Removed: $container" -ForegroundColor Green
+            } catch {
+              Write-Host "   • Skipped: $container (not found)" -ForegroundColor Gray
+            }
+          }
+
+          Write-Host ""
+
+          # Remove networks
+          Write-Host "🌐 Removing networks..." -ForegroundColor Yellow
+          try {
+            docker network rm flexorder-ci-workflow_flexorder-network 2>$null | Out-Null
+            Write-Host "   OK Network removed" -ForegroundColor Green
+          } catch {
+            Write-Host "   • Network not found (skipped)" -ForegroundColor Gray
+          }
+
+          Write-Host ""
+
+          # Remove volumes
+          Write-Host "💾 Removing volumes..." -ForegroundColor Yellow
+          $volumes = @('flexorder-ci-workflow_wordpress_data', 'flexorder-ci-workflow_mysql_data')
+          foreach ($volume in $volumes) {
+            try {
+              docker volume rm $volume 2>$null | Out-Null
+              Write-Host "   OK Removed: $volume" -ForegroundColor Green
+            } catch {
+              Write-Host "   • Skipped: $volume (not found)" -ForegroundColor Gray
+            }
+          }
+
+          Write-Host ""
+
+          # Docker Compose cleanup
+          Write-Host "🐳 Running docker-compose cleanup..." -ForegroundColor Yellow
+          if (Test-Path "docker-compose.fresh-wordpress.yml") {
+            docker compose -f docker-compose.fresh-wordpress.yml down -v --remove-orphans 2>$null | Out-Null
+            Write-Host "   OK Compose cleanup completed" -ForegroundColor Green
+          } else {
+            Write-Host "   • Compose file not found (skipped)" -ForegroundColor Gray
+          }
+
+          Write-Host ""
+
+          # Scoped cleanup only — must not wipe other repos' state on the
+          # shared self-hosted runner. Project volumes were already removed
+          # above via the explicit volume list.
+          Write-Host "🗑️  Pruning FlexOrder-scoped images/build cache..." -ForegroundColor Yellow
+          docker image prune -f --filter "label=com.docker.compose.project=flexorder-ci-workflow" 2>$null | Out-Null
+          docker builder prune -f --keep-storage 5GB 2>$null | Out-Null
+          Write-Host "   OK Scoped cleanup completed" -ForegroundColor Green
+
+          Write-Host ""
+          Write-Host "✅ Docker cleanup completed successfully!" -ForegroundColor Green
+          Write-Host ""
+
+      - name: 📊 Display Cleanup Summary
+        shell: powershell
+        run: |
+          Write-Host "============================================================" -ForegroundColor Cyan
+          Write-Host "[Stats] Cleanup Summary" -ForegroundColor Cyan
+          Write-Host "============================================================" -ForegroundColor Cyan
+          Write-Host ""
+
+          Write-Host "Docker Status:" -ForegroundColor Yellow
+
+          # Show remaining containers (should be none)
+          $containers = docker ps -a --filter "name=flexorder" --format "{{.Names}}" 2>$null
+          if ($containers) {
+            Write-Host "   ⚠️  Remaining containers: $containers" -ForegroundColor Yellow
+          } else {
+            Write-Host "   ✅ No FlexOrder containers remaining" -ForegroundColor Green
+          }
+
+          # Show remaining volumes (should be none)
+          $volumes = docker volume ls --filter "name=flexorder-ci-workflow" --format "{{.Name}}" 2>$null
+          if ($volumes) {
+            Write-Host "   ⚠️  Remaining volumes: $volumes" -ForegroundColor Yellow
+          } else {
+            Write-Host "   ✅ No FlexOrder volumes remaining" -ForegroundColor Green
+          }
+
+          # Show remaining networks (should be none)
+          $networks = docker network ls --filter "name=flexorder-ci-workflow" --format "{{.Name}}" 2>$null
+          if ($networks) {
+            Write-Host "   ⚠️  Remaining networks: $networks" -ForegroundColor Yellow
+          } else {
+            Write-Host "   ✅ No FlexOrder networks remaining" -ForegroundColor Green
+          }
+
+          Write-Host ""
+          Write-Host "✅ Cleanup job completed!" -ForegroundColor Green
+          Write-Host ""

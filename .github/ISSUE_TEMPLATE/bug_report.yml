@@ -1,0 +1,213 @@
+name: 🐛 Bug Report
+description: Report a bug in the FlexOrder E2E CI workflow
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! Please provide as much detail as possible to help us reproduce and fix the issue.
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Pre-submission Checklist
+      description: Please verify these items before submitting
+      options:
+        - label: I have searched existing issues to ensure this bug hasn't been reported before
+          required: true
+        - label: I have checked the latest version of the CI workflow
+          required: true
+        - label: I have reviewed the workflow logs and documentation
+          required: true
+
+  - type: dropdown
+    id: bug-category
+    attributes:
+      label: Bug Category
+      description: What category does this bug fall under?
+      options:
+        - CI/CD Pipeline
+        - WordPress Environment Setup
+        - Plugin Deployment
+        - Test Execution
+        - Docker/Container Issues
+        - Environment Configuration
+        - Test Data/API Keys
+        - Reporting/Notifications
+        - Cleanup Process
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How severe is this bug?
+      options:
+        - Critical (Blocks all testing)
+        - High (Breaks major functionality)
+        - Medium (Affects some functionality)
+        - Low (Minor issue or cosmetic)
+    validations:
+      required: true
+
+  - type: textarea
+    id: bug-description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is
+      placeholder: Describe what happened and what you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction-steps
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce the behavior
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. Run command '...'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+      placeholder: A clear description of what you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual Behavior
+      description: What actually happened
+      placeholder: A clear description of what actually happened
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      description: Which environment did this occur in?
+      options:
+        - GitHub Actions (CI)
+        - Local Development
+        - Docker Environment
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: workflow-run-id
+    attributes:
+      label: GitHub Actions Run ID (if applicable)
+      description: Provide the GitHub Actions run ID where the bug occurred
+      placeholder: "e.g., 1234567890"
+
+  - type: input
+    id: branch
+    attributes:
+      label: Branch
+      description: Which branch was affected?
+      placeholder: "e.g., main, dev, qa"
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-logs
+    attributes:
+      label: Error Logs/Stack Trace
+      description: Paste any relevant error messages or stack traces
+      placeholder: |
+        Paste your error logs here...
+      render: shell
+
+  - type: textarea
+    id: workflow-step
+    attributes:
+      label: Failed Workflow Step
+      description: Which specific step in the CI workflow failed?
+      placeholder: |
+        e.g., 
+        - Setup Node.js
+        - Install Playwright
+        - Start WordPress with Docker
+        - Run E2E Tests
+        - etc.
+
+  - type: textarea
+    id: docker-info
+    attributes:
+      label: Docker/Container Information (if applicable)
+      description: Any relevant Docker container or service information
+      placeholder: |
+        - Container status
+        - Port mappings
+        - Volume mounts
+        - Service logs
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots/Artifacts
+      description: If applicable, add screenshots or links to test artifacts
+      placeholder: |
+        Drag and drop screenshots here or provide links to:
+        - Test results
+        - Playwright reports
+        - Screenshots from failed tests
+
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Configuration Details
+      description: Relevant configuration information
+      placeholder: |
+        - Node.js version
+        - Playwright version
+        - Docker version
+        - Environment variables (without sensitive data)
+        - Any custom configurations
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other information that might be helpful
+      placeholder: |
+        - Frequency of the issue (always, sometimes, once)
+        - When did you first notice this issue?
+        - Any recent changes that might be related?
+        - Workarounds you've tried
+
+  - type: checkboxes
+    id: impact
+    attributes:
+      label: Impact Assessment
+      description: What is the impact of this bug?
+      options:
+        - label: Blocks CI/CD pipeline execution
+        - label: Causes test failures
+        - label: Affects WordPress environment setup
+        - label: Breaks plugin deployment
+        - label: Impacts test data generation
+        - label: Affects reporting/notifications
+        - label: Other (specify in additional context)
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution (Optional)
+      description: If you have ideas on how to fix this issue, please share them
+      placeholder: Describe any potential solutions or workarounds you've considered

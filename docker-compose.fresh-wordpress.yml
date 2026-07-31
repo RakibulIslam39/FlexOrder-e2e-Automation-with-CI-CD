@@ -1,0 +1,127 @@
+services:
+  wordpress:
+    # Pinned minor versions keep CI runs reproducible. Bump deliberately,
+    # never via `:latest` floating tags.
+    image: wordpress:6.4-php8.2-apache
+    container_name: flexorder-wordpress
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      WORDPRESS_DB_HOST: mysql
+      WORDPRESS_DB_NAME: flexorder_test
+      WORDPRESS_DB_USER: flexorder_user
+      WORDPRESS_DB_PASSWORD: flexorder_pass
+      # Debug mode is kept ON because e2e tests surface PHP notices/warnings
+      # as actionable failures. Disable locally via an override file if noise
+      # is a problem.
+      WORDPRESS_CONFIG_EXTRA: |
+        if (!defined('WP_DEBUG')) define('WP_DEBUG', true);
+        if (!defined('WP_DEBUG_LOG')) define('WP_DEBUG_LOG', true);
+        if (!defined('WP_DEBUG_DISPLAY')) define('WP_DEBUG_DISPLAY', false);
+        if (!defined('WP_MEMORY_LIMIT')) define('WP_MEMORY_LIMIT', '512M');
+        if (!defined('WP_MAX_MEMORY_LIMIT')) define('WP_MAX_MEMORY_LIMIT', '512M');
+    volumes:
+      - wordpress_data:/var/www/html
+      - ./uploads.ini:/usr/local/etc/php/conf.d/uploads.ini
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80 && [ -f /var/www/html/wp-config.php ]"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    networks:
+      - flexorder-network
+
+  mysql:
+    image: mysql:8.0.36
+    container_name: flexorder-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: flexorder_test
+      MYSQL_USER: flexorder_user
+      MYSQL_PASSWORD: flexorder_pass
+      MYSQL_ALLOW_EMPTY_PASSWORD: "no"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d
+    networks:
+      - flexorder-network
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # phpmyadmin and mailhog are dev-only aids. Opt-in via:
+  #   docker compose --profile dev up
+  # so CI runs don't pay the price of booting services no test touches.
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:5.2
+    container_name: flexorder-phpmyadmin
+    profiles: ["dev"]
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: flexorder_user
+      PMA_PASSWORD: flexorder_pass
+      MYSQL_ROOT_PASSWORD: rootpassword
+    ports:
+      - "8081:80"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - flexorder-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: flexorder-mailhog
+    profiles: ["dev"]
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    networks:
+      - flexorder-network
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+
+volumes:
+  wordpress_data:
+    driver: local
+  mysql_data:
+    driver: local
+
+networks:
+  flexorder-network:
+    driver: bridge

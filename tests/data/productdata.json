@@ -1,0 +1,19 @@
+{
+  "product": {
+    "name": "Album",
+    "country": "BD",
+    "firstName": "Rakibul",
+    "lastName": "Islam",
+    "address": "Dhaka, Bangladesh",
+    "city": "Dhaka",
+    "district": "BD-13"
+  },
+  "serviceAccount": {
+    "name": "tahsin0531",
+    "downloadPath": "./tests/utilities/downloaded_key.json",
+    "uploadFile": "./tests/utilities/upload_key.json"
+  },
+  "timeouts": {
+    "defaultTimeout": 30000
+  }
+}

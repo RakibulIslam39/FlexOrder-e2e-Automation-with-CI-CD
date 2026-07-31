@@ -1,0 +1,45 @@
+# Create this file for WPPOOL/flexorder-ultimate repository
+name: Trigger E2E Tests
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  trigger-e2e:
+    name: Trigger FlexOrder E2E Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔐 Generate GitHub App Token
+        id: app-token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.APP_ID }}
+          private_key: ${{ secrets.APP_PRIVATE_KEY }}
+          installation_retrieval_mode: repository
+          installation_retrieval_payload: WPPOOL/flexorder-ci-workflow
+          repositories: '["flexorder-ci-workflow"]'
+
+      - name: 🚀 Trigger E2E Tests for FlexOrder Ultimate Plugin
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          repository: WPPOOL/flexorder-ci-workflow
+          event-type: flexorder-ultimate
+          client-payload: |
+            {
+              "repository": "flexorder-ultimate",
+              "branch": "${{ github.ref_name }}",
+              "sha": "${{ github.sha }}",
+              "pusher": "${{ github.actor }}",
+              "commit_message": "${{ github.event.head_commit.message }}"
+            }
+
+      - name: ✅ Confirm Trigger Sent
+        run: |
+          echo "🚀 E2E test trigger sent for FlexOrder Ultimate Plugin"
+          echo "📋 Branch: ${{ github.ref_name }}"
+          echo "📋 SHA: ${{ github.sha }}"
+          echo "📋 Pusher: ${{ github.actor }}"
+          echo "📋 Target Repository: WPPOOL/flexorder-ci-workflow"
+          echo "🔑 Authentication: GitHub App Token"

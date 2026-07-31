@@ -1,0 +1,40 @@
+[mysqld]
+# Performance Configuration for E2E Testing
+innodb_buffer_pool_size = 256M
+innodb_log_file_size = 64M
+innodb_log_buffer_size = 16M
+innodb_flush_log_at_trx_commit = 2
+innodb_flush_method = O_DIRECT
+
+# Connection Configuration
+max_connections = 100
+max_user_connections = 50
+thread_cache_size = 8
+table_open_cache = 1000
+
+# Query Cache (for testing performance)
+query_cache_type = 1
+query_cache_size = 32M
+query_cache_limit = 2M
+
+# Timeout Configuration
+wait_timeout = 600
+interactive_timeout = 600
+connect_timeout = 30
+
+# Binary Logging (disabled for testing)
+skip-log-bin
+
+# Temporary Table Configuration
+tmp_table_size = 64M
+max_heap_table_size = 64M
+
+# MyISAM Configuration
+key_buffer_size = 32M
+
+# Character Set
+character_set_server = utf8mb4
+collation_server = utf8mb4_unicode_ci
+
+# Security
+local_infile = 0
