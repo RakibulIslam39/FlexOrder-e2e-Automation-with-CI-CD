@@ -1,160 +1,147 @@
-# FlexOrder E2E Automation Testing
+# FlexOrder E2E Automation with CI/CD
 
-> Comprehensive end-to-end testing suite for FlexOrder WordPress plugin with WooCommerce and Google Sheets integration.
+> End-to-end test automation framework for the **FlexOrder** WordPress plugin (WooCommerce → Google Sheets order sync), built with **Playwright + TypeScript**, a **Dockerized WordPress** environment, and a **GitHub Actions** CI/CD pipeline.
 
-[![CI/CD Pipeline](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-blue)](https://github.com/wppool/flexorder-e2e-automation)
-[![Playwright](https://img.shields.io/badge/Playwright-v1.56-green)](https://playwright.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org/)
+[![CI/CD Pipeline](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-blue)](https://github.com/RakibulIslam39/FlexOrder-e2e-Automation-with-CI-CD/actions)
+[![Playwright](https://img.shields.io/badge/Playwright-1.56-2EAD33?logo=playwright)](https://playwright.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Docker](https://img.shields.io/badge/Docker-WordPress-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 
 ---
 
 ## 📋 Table of Contents
 
-- [Overview](#overview)
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Project Structure](#project-structure)
-- [Environment Configuration](#environment-configuration)
-- [Running Tests](#running-tests)
-- [CI/CD Pipeline](#cicd-pipeline)
-- [Repository Dispatch Setup](#repository-dispatch-setup)
-- [Test Architecture](#test-architecture)
-- [Beginner-Friendly Execution Guide (Bangla)](docs/BEGINNER_AUTOMATION_EXECUTION_GUIDE_BN.md)
-- [Handover Video Script (Bangla)](docs/HANDOVER_VIDEO_SCRIPT_BN.md)
-- [Repository Analysis & Doc Improvements (Bangla)](docs/REPOSITORY_ANALYSIS_AND_DOC_IMPROVEMENTS_BN.md)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
+- [Overview](#-overview)
+- [Tech Stack](#-tech-stack)
+- [Features](#-features)
+- [Prerequisites](#-prerequisites)
+- [Quick Start](#-quick-start)
+- [Project Structure](#-project-structure)
+- [Environment Configuration](#-environment-configuration)
+- [Running Tests](#-running-tests)
+- [Test Architecture](#-test-architecture)
+- [CI/CD Pipeline](#-cicd-pipeline)
+- [Repository Dispatch Setup](#-repository-dispatch-setup)
+- [Documentation](#-documentation)
+- [Troubleshooting](#-troubleshooting)
+- [Contributing](#-contributing)
 
 ---
 
 ## 🎯 Overview
 
-This is a **CI/CD workflow repository** that provides automated end-to-end testing for the **FlexOrder** WordPress plugin ecosystem. Tests are automatically triggered when code is pushed to plugin repositories, ensuring quality across:
+This repository is an **automated end-to-end (E2E) testing suite** for the
+**FlexOrder** WordPress plugin ecosystem — a plugin that synchronizes
+WooCommerce orders with Google Sheets.
 
-- WooCommerce order management
-- Google Sheets synchronization
-- WordPress admin functionality
-- Pro/Ultimate features
+The suite spins up a **fresh, disposable WordPress + WooCommerce environment in
+Docker**, installs the FlexOrder plugins, provisions test data and API keys, and
+then drives the browser and REST APIs with **Playwright** to validate:
 
-The test suite runs on self-hosted GitHub Actions runners with Docker-based WordPress installations, providing a fresh testing environment for each run.
+- WooCommerce order management via the REST API
+- Google Sheets ↔ WooCommerce order-status synchronization
+- The FlexOrder setup wizard (credentials + Google Sheet connection)
+- FlexOrder Ultimate (Pro) display/formatting/filtering settings
 
-**Key Integration**: This CI repository listens for `repository_dispatch` events from the `flexorder` and `flexorder-ultimate` plugin repositories, automatically running comprehensive E2E tests whenever changes are pushed to those repositories.
+In CI, the pipeline is designed to run on a **self-hosted GitHub Actions runner**
+and can be triggered automatically from the plugin repositories via
+`repository_dispatch`, so every plugin commit is validated against the exact
+pushed version.
+
+---
+
+## 🧰 Tech Stack
+
+| Area | Technology |
+|------|-----------|
+| Test runner | [Playwright](https://playwright.dev/) (`@playwright/test`) |
+| Language | TypeScript (strict), Node.js ≥ 18 |
+| App under test | WordPress + WooCommerce + FlexOrder (Free & Ultimate) |
+| Environment | Docker Compose (WordPress, MySQL, phpMyAdmin, MailHog) |
+| Integrations | WooCommerce REST API, Google Sheets API (`googleapis`, `google-spreadsheet`) |
+| CI/CD | GitHub Actions (self-hosted runner), `repository_dispatch` |
+| Reporting | HTML, JUnit, JSON, GitHub reporter, custom flaky-test reporter |
+| Quality | ESLint, Prettier, `tsc --noEmit`, Husky + lint-staged |
 
 ---
 
 ## ✨ Features
 
-- ✅ **Automated WordPress Setup** - Docker-based fresh WordPress environment
-- ✅ **WooCommerce Integration** - API testing and order management
-- ✅ **Google Sheets Sync** - Bi-directional order synchronization tests
-- ✅ **Repository Dispatch** - Automatic test triggering from plugin repositories
-- ✅ **Page Object Model** - Maintainable and reusable test code
-- ✅ **CI/CD Ready** - GitHub Actions with self-hosted runners
-- ✅ **Flaky Test Detection** - Automatic identification of unstable tests
-- ✅ **Comprehensive Reporting** - HTML, JUnit, and JSON test reports
-- ✅ **Email Notifications** - Success/failure reports via SMTP
-- ✅ **TypeScript** - Type-safe test development
+- ✅ **Disposable WordPress environment** — fresh Docker stack per run
+- ✅ **Project pipeline** — auth → plugin setup → E2E, enforced via Playwright `dependencies`
+- ✅ **One-shot authentication** — logs in once, reuses stored session state
+- ✅ **WooCommerce REST API** — auto-generated consumer keys for API tests
+- ✅ **Google Sheets sync** — bi-directional order-status validation
+- ✅ **Page Object Model + service classes** — maintainable, reusable code
+- ✅ **Repository dispatch** — automatic testing on plugin commits
+- ✅ **Flaky-test detection** — custom reporter flags unstable tests
+- ✅ **Rich reporting** — HTML / JUnit / JSON artifacts, plus optional Email & Slack notifications
+- ✅ **Type-safe** — end-to-end TypeScript with linting/formatting gates
 
 ---
 
 ## 📦 Prerequisites
 
-### Required Software
+| Software | Version |
+|----------|---------|
+| Node.js | ≥ 18.0.0 |
+| npm | ≥ 8.0.0 |
+| Docker | ≥ 20.10 (for the local WordPress stack) |
+| Docker Compose | ≥ 2.0 |
 
-- **Node.js**: >= 18.0.0
-- **npm**: >= 8.0.0
-- **Docker**: >= 20.10.0 (for local WordPress environment)
-- **Docker Compose**: >= 2.0.0
-
-### Optional for Google Sheets Tests
-
-- Google Cloud Service Account with Sheets API access
-- Google Sheets API enabled in your GCP project
+**Optional (for Google Sheets tests):** a Google Cloud service account with the
+Google Sheets API enabled and Editor access to your target sheet.
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Clone the Repository
+### 1. Clone & install
 
 ```bash
-git clone https://github.com/wppool/flexorder-e2e-automation.git
-cd flexorder-e2e-automation
-```
-
-### 2. Install Dependencies
-
-```bash
+git clone https://github.com/RakibulIslam39/FlexOrder-e2e-Automation-with-CI-CD.git
+cd FlexOrder-e2e-Automation-with-CI-CD
 npm ci
-```
-
-### 3. Install Playwright Browsers
-
-```bash
 npx playwright install --with-deps chromium
 ```
 
-### 4. Configure Environment
+### 2. Configure environment
 
 ```bash
-# Copy the example environment file
 cp .env.example .env
-
-# Edit .env and add your configuration
-nano .env
+# then edit .env
 ```
 
-**Minimum required variables:**
+Minimum required values (see [Environment Configuration](#-environment-configuration)):
 
 ```bash
 SITE_URL=http://localhost:8080
 USER_NAME=admin
 PASSWORD=admin123
-FLEXORDER_PRO_LICENSE_KEY=your-license-key-here
 ```
 
-### 5. Start WordPress Environment
+### 3. Start the WordPress stack
 
 ```bash
-# Start WordPress, MySQL, and supporting services
 docker compose -f docker-compose.fresh-wordpress.yml up -d
-
-# Wait for services to be ready (approximately 2 minutes)
-docker compose -f docker-compose.fresh-wordpress.yml ps
+docker compose -f docker-compose.fresh-wordpress.yml ps   # wait until healthy (~2 min)
 ```
 
-### 6. Provision Test Environment
+### 4. Provision the test environment
+
+Installs WordPress core + WooCommerce, activates the FlexOrder plugins, and
+generates WooCommerce API keys into `tests/fixtures/api-keys.json`:
 
 ```bash
-# This script will:
-# - Install WordPress
-# - Install WooCommerce
-# - Generate API keys
-# - Create test products and orders
 npm run setup:ci
 ```
 
-### 7. Run Tests
+### 5. Run the tests
 
 ```bash
-# Run all tests
-npm test
-
-# Run in headed mode (see browser)
-npm run test:headed
-
-# Run in UI mode (interactive)
-npm run test:ui
-```
-
-### 8. Verify Repository Dispatch Setup (Optional)
-
-If setting up repository dispatch integration:
-
-```bash
-# Verify configuration is correct
-npm run verify:dispatch
+npm test              # headless
+npm run test:headed   # watch the browser
+npm run test:ui       # interactive UI mode
 ```
 
 ---
@@ -162,58 +149,55 @@ npm run verify:dispatch
 ## 📁 Project Structure
 
 ```
-flexorder-ci-workflow/
+FlexOrder-e2e-Automation-with-CI-CD/
 ├── .github/
-│   ├── flexorder_workflow/          # Template workflows for plugin repos
-│   │   ├── flexorder.yml            # Trigger workflow for flexorder repo
-│   │   └── flexorder-ultimate.yml   # Trigger workflow for flexorder-ultimate repo
+│   ├── ISSUE_TEMPLATE/               # Bug report / feature request templates
+│   ├── flexorder_workflow/           # Trigger-workflow templates for plugin repos
+│   │   ├── flexorder.yml
+│   │   └── flexorder-ultimate.yml
 │   └── workflows/
-│       └── ci-workflow.yml          # Main CI/CD pipeline
+│       └── ci-workflow.yml           # Main CI/CD pipeline (self-hosted)
 ├── src/
 │   ├── config/
-│   │   ├── environment.ts           # Environment configuration
-│   │   └── flaky-tests-reporter.ts  # Custom Playwright reporter
-│   ├── interfaces/
-│   │   ├── order.ts                 # TypeScript interfaces
-│   │   └── google-sheets.ts
-│   ├── pages/                       # Page Object Models (UI-only)
+│   │   ├── environment.ts            # Centralized env loading + validation
+│   │   └── flaky-tests-reporter.ts   # Custom Playwright reporter
+│   ├── interfaces/                   # TypeScript interfaces (order, google-sheets)
+│   ├── pages/                        # Page Object Models (UI)
 │   │   ├── login.ts
 │   │   ├── flexorder-setup.ts
 │   │   └── ultimateSettings.ts
-│   ├── services/                    # Non-UI integrations
-│   │   ├── google-sheet-api.ts      # Google Sheets integration
-│   │   └── order-status-updater.ts  # Sheets ↔ WooCommerce sync service
+│   ├── services/                     # Non-UI integrations
+│   │   ├── google-sheet-api.ts
+│   │   └── order-status-updater.ts   # Sheets ↔ WooCommerce sync service
 │   └── utils/
-│       └── googleSheetHelper.ts     # Test helpers
+│       └── googleSheetHelper.ts
 ├── tests/
-│   ├── auth.setup.ts                # Logs in once, saves storage state
-│   ├── specs/                       # Test specifications
-│   │   ├── flexorder-setup.spec.ts  # Plugin onboarding (setup project)
-│   │   ├── woocommerceAPI.spec.ts   # REST API smoke tests
-│   │   ├── ultimateSettings.spec.ts # E2E UI tests
-│   │   └── update-order-status.spec.ts
-│   ├── fixtures/                    # Test fixtures
-│   │   ├── test-fixtures.ts         # Shared POM/service fixtures
-│   │   ├── .auth/user.json          # Persisted login state (gitignored)
-│   │   ├── api-keys.json            # Auto-generated WooCommerce API keys
-│   │   └── upload_key.json          # Google service account key
-│   ├── data/
-│   │   └── productdata.json         # Test product data (no credentials)
-│   ├── global-setup.ts              # Global test setup
-│   └── global-teardown.ts           # Global test teardown
+│   ├── auth.setup.ts                 # Logs in once, saves storage state
+│   ├── global-setup.ts / global-teardown.ts
+│   ├── specs/
+│   │   ├── flexorder-setup.spec.ts   # Setup wizard (plugin-setup project)
+│   │   ├── ultimateSettings.spec.ts  # Ultimate settings validations (e2e project)
+│   │   ├── update-order-status.spec.ts # Sheets → WooCommerce sync (e2e project)
+│   │   ├── woocommerceAPI.spec.ts     # REST API smoke tests (scaffold)
+│   │   └── a-active-ultimate.spec.ts  # License activation (scaffold)
+│   ├── fixtures/
+│   │   ├── test-fixtures.ts          # Shared POM + service fixtures
+│   │   ├── .auth/                    # Persisted login state (git-ignored)
+│   │   ├── api-keys.json             # Auto-generated WC keys (git-ignored)
+│   │   └── upload_key.json           # Google service-account key (git-ignored)
+│   └── data/
+│       └── productdata.json          # Test data (no credentials)
 ├── scripts/
-│   ├── setup-ci-environment.ts      # Environment provisioning script
-│   └── verify-dispatch-config.ts    # Repository dispatch verification
-├── docs/
-│   ├── ci-workflow-diagram.md       # CI workflow documentation
-│   ├── self-hosted-runner-setup.md  # Runner setup guide
-│   ├── BEGINNER_AUTOMATION_EXECUTION_GUIDE_BN.md # Beginner-friendly run guide (Bangla)
-│   ├── REPOSITORY_ANALYSIS_AND_DOC_IMPROVEMENTS_BN.md # Analysis + documentation gap report (Bangla)
-│   └── WOOCOMMERCE_API_CREDENTIALS_GUIDE.md
+│   ├── setup-ci-environment.ts       # Provision WordPress + data + API keys
+│   ├── verify-dispatch-config.ts     # Validate repository_dispatch wiring
+│   ├── setup-github-secrets.sh       # Template to push repo secrets/variables via gh
+│   └── *.ps1                         # Self-hosted (Windows) runner helpers
+├── docs/                             # Guides & reference docs (see Documentation)
+├── mysql-config/ · mysql-init/       # MySQL tuning & init scripts
 ├── docker-compose.fresh-wordpress.yml
-├── playwright.config.ts             # Playwright configuration
-├── package.json
-├── tsconfig.json
+├── playwright.config.ts
+├── package.json · tsconfig.json · uploads.ini
+├── .env.example · .eslintrc.js · .prettierrc
 └── README.md
 ```
 
@@ -221,539 +205,294 @@ flexorder-ci-workflow/
 
 ## ⚙️ Environment Configuration
 
-### Environment Variables
+All variables are read through `src/config/environment.ts`. Locally they come
+from `.env`; in CI they are injected from GitHub Secrets by the workflow.
+Copy `.env.example` to `.env` and fill in the values.
 
-Create a `.env` file based on `.env.example`:
+| Variable | Required | Description | Default |
+|----------|----------|-------------|---------|
+| `SITE_URL` | ✅ | WordPress site URL | `http://localhost:8080` |
+| `USER_NAME` | ✅ | WordPress admin username | — |
+| `PASSWORD` | ✅ | WordPress admin password | — |
+| `ADMIN_PANEL_URL` | ➖ | WP admin URL | `${SITE_URL}/wp-admin/` |
+| `WOOCOMMERCE_CONSUMER_KEY` | ⚙️ | WooCommerce API key | auto-generated by `setup:ci` |
+| `WOOCOMMERCE_CONSUMER_SECRET` | ⚙️ | WooCommerce API secret | auto-generated by `setup:ci` |
+| `GOOGLE_SHEET_URL` | ➖ | Google Sheet URL for sync tests | — |
+| `SHEET_NAME` | ➖ | Worksheet / tab name | `Orders` |
+| `SERVICE_ACCOUNT_UPLOAD_FILE` | ➖ | Path to Google service-account JSON | `./tests/fixtures/upload_key.json` |
+| `FLEXORDER_PRO_LICENSE_KEY` | ➖ | FlexOrder Pro license key | — |
+| `DB_HOST` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | ➖ | Local Docker DB settings | Docker defaults |
+| `NON_HEADLESS` / `SLOWMO` / `TIMEOUT_SECONDS` / `MAX_RETRIES` / `PARALLEL_WORKERS` | ➖ | Playwright debug/tuning | — |
 
-| Variable                      | Required | Description                      | Default                            |
-| ----------------------------- | -------- | -------------------------------- | ---------------------------------- |
-| `SITE_URL`                    | ✅       | WordPress site URL               | `http://localhost:8080`            |
-| `ADMIN_PANEL_URL`             | ✅       | WordPress admin URL              | `{SITE_URL}/wp-admin/`             |
-| `USER_NAME`                   | ✅       | WordPress admin username         | `admin`                            |
-| `PASSWORD`                    | ✅       | WordPress admin password         | `admin123`                         |
-| `WOOCOMMERCE_CONSUMER_KEY`    | ⚠️       | WooCommerce API consumer key     | Auto-generated                     |
-| `WOOCOMMERCE_CONSUMER_SECRET` | ⚠️       | WooCommerce API consumer secret  | Auto-generated                     |
-| `GOOGLE_SHEET_URL`            | ❌       | Google Sheets URL for sync tests | -                                  |
-| `SHEET_NAME`                  | ❌       | Sheet name/tab                   | `Orders`                           |
-| `SERVICE_ACCOUNT_UPLOAD_FILE` | ❌       | Path to service account JSON     | `./tests/fixtures/upload_key.json` |
-| `FLEXORDER_PRO_LICENSE_KEY`   | ✅       | FlexOrder Pro license key        | -                                  |
+**Legend:** ✅ required · ⚙️ auto-generated by `npm run setup:ci` · ➖ optional
+(only needed for specific features such as Google Sheets tests).
 
-⚠️ = Auto-generated by `npm run setup:ci`  
-❌ = Optional (required only for Google Sheets tests)
+> **Secrets are never committed.** `.env`, `tests/fixtures/upload_key.json`, and
+> `tests/fixtures/api-keys.json` are all git-ignored. For the full CI secret &
+> variable reference, see [`docs/CI_SECRETS_AND_VARIABLES.md`](docs/CI_SECRETS_AND_VARIABLES.md).
 
-### Google Sheets Setup (Optional)
+### Google Sheets setup (optional)
 
-If you want to test Google Sheets integration:
-
-1. **Create a Google Cloud Project**
-2. **Enable Google Sheets API**
-3. **Create a Service Account**
-4. **Download Service Account JSON key**
-5. **Place the JSON file** at `tests/fixtures/upload_key.json`
-6. **Share your Google Sheet** with the service account email (found in the JSON)
-7. **Set environment variables:**
-   ```bash
-   GOOGLE_SHEET_URL=https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit
-   SHEET_NAME=Orders
-   SERVICE_ACCOUNT_UPLOAD_FILE=./tests/fixtures/upload_key.json
-   ```
+1. Create a Google Cloud project and **enable the Google Sheets API**.
+2. Create a **service account** and download its JSON key.
+3. Save the key at `tests/fixtures/upload_key.json` (git-ignored).
+4. **Share your Google Sheet** with the service-account email (Editor access).
+5. Set `GOOGLE_SHEET_URL` and `SHEET_NAME` in `.env`.
 
 ---
 
 ## 🧪 Running Tests
 
-### Local Development
+### Common commands
 
 ```bash
-# Run all tests
-npm test
-
-# Run specific test file
-npx playwright test tests/specs/createNewOrder.spec.ts
-
-# Run tests in headed mode (see browser)
-npm run test:headed
-
-# Run tests in UI mode (interactive debugging)
-npm run test:ui
-
-# Run tests in debug mode
-npm run test:debug
-
-# Run only tests matching a pattern
-npx playwright test --grep "activate FlexOrder"
+npm test                                   # run all tests (headless)
+npm run test:headed                        # run with a visible browser
+npm run test:ui                            # interactive UI mode
+npm run test:debug                         # Playwright inspector
+npm run test:report                        # open the last HTML report
+npx playwright test tests/specs/update-order-status.spec.ts   # a single file
+npx playwright test --grep "Ultimate Settings"                # by title
 ```
 
-### View Test Reports
-
-```bash
-# Open HTML report
-npm run test:report
-
-# Reports are automatically opened on failure in local development
-```
-
-### Available NPM Scripts
-
-| Command                   | Description                                    |
-| ------------------------- | ---------------------------------------------- |
-| `npm test`                | Run all E2E tests                              |
-| `npm run test:headed`     | Run tests in headed mode (see browser)         |
-| `npm run test:ui`         | Run tests in UI mode (interactive debugging)   |
-| `npm run test:debug`      | Run tests in debug mode                        |
-| `npm run test:report`     | Open HTML test report                          |
-| `npm run test:ci:full`    | Run full test suite (CI mode)                  |
-| `npm run setup:ci`        | Provision test environment (WordPress + data)  |
-| `npm run verify:dispatch` | Verify repository dispatch configuration       |
-| `npm run lint`            | Run ESLint                                     |
-| `npm run format`          | Format code with Prettier                      |
-| `npm run type-check`      | Run TypeScript type checking                   |
-| `npm run validate`        | Run all quality checks (lint + format + types) |
-
-### CI Environment
-
-The CI pipeline automatically runs tests when:
-
-- **Plugin Updates**: Code pushed to `flexorder` or `flexorder-ultimate` repositories (via `repository_dispatch`)
-- **CI Updates**: Code pushed to `main` or `qa` branches of this repository
-- **Manual Trigger**: Via GitHub Actions UI (`workflow_dispatch`)
-- **Scheduled**: Daily at 2 AM UTC (optional)
-
-**Most Common**: Tests run automatically via `repository_dispatch` when developers push to plugin repositories.
-
----
-
-## 🔄 CI/CD Pipeline
-
-### Workflow Triggers
-
-The CI pipeline automatically runs in these scenarios:
-
-- **Push to CI Repository**: `main`, `qa` branches
-- **Repository Dispatch**: Triggered from plugin repositories when code is pushed to `flexorder` or `flexorder-ultimate`
-- **Manual Trigger**: `workflow_dispatch` via GitHub Actions UI
-- **Scheduled**: Daily at 2 AM UTC (optional, commented out by default)
-
-### How Repository Dispatch Works
-
-When developers push code to the plugin repositories, tests run automatically:
-
-```
-Developer pushes to flexorder/main
-         ↓
-flexorder/.github/workflows/trigger-e2e.yml runs
-         ↓
-Sends repository_dispatch event to flexorder-ci-workflow
-         ↓
-flexorder-ci-workflow/.github/workflows/ci-workflow.yml runs
-         ↓
-Tests the exact commit that was pushed
-```
-
-**Benefits:**
-
-- ✅ Automatic E2E testing on every plugin commit
-- ✅ Tests the exact version that was pushed
-- ✅ Separate plugin and CI repositories
-- ✅ No manual intervention needed
-
-### Pipeline Stages
-
-1. **Setup** - Checkout code, setup Node.js, install dependencies
-2. **Docker Environment** - Start WordPress, MySQL, phpMyAdmin, MailHog
-3. **WordPress Installation** - Install WordPress core and WooCommerce
-4. **Plugin Deployment** - Download and install FlexOrder plugins from GitHub (using the pushed commit SHA)
-5. **Test Data Provisioning** - Create products, orders, and API keys
-6. **Test Execution** - Run full E2E test suite
-7. **Reporting** - Generate and upload test reports, send email notifications
-8. **Cleanup** - Clean up Docker resources
-
-### GitHub Secrets Required
-
-#### In CI Repository (flexorder-ci-workflow)
-
-| Secret                      | Description                                    | Required |
-| --------------------------- | ---------------------------------------------- | -------- |
-| `APP_ID`                    | GitHub App ID for plugin access                | ✅       |
-| `APP_PRIVATE_KEY`           | GitHub App private key (PEM format)            | ✅       |
-| `GOOGLE_SHEET_URL`          | Google Sheets URL (if testing Sheets)          | ❌       |
-| `SHEET_NAME`                | Sheet name/tab (if testing Sheets)             | ❌       |
-| `FLEXORDER_PRO_LICENSE_KEY` | FlexOrder Pro license key                      | ✅       |
-| `SMTP_SERVER`               | SMTP server for email notifications (optional) | ❌       |
-| `SMTP_USERNAME`             | SMTP username (optional)                       | ❌       |
-| `SMTP_PASSWORD`             | SMTP password (optional)                       | ❌       |
-| `EMAIL_TO`                  | Email recipient for test reports (optional)    | ❌       |
-
-#### In Plugin Repositories (flexorder, flexorder-ultimate)
-
-| Secret            | Description                         | Required |
-| ----------------- | ----------------------------------- | -------- |
-| `APP_ID`          | Same GitHub App ID as CI repository | ✅       |
-| `APP_PRIVATE_KEY` | Same GitHub App private key         | ✅       |
-
-### Self-Hosted Runner Setup
-
-The CI pipeline runs on self-hosted Windows runners. See `docs/self-hosted-runner-setup.md` for detailed setup instructions.
-
----
-
-## 🔗 Repository Dispatch Setup
-
-### Overview
-
-This project uses **GitHub's repository_dispatch** feature to automatically trigger E2E tests when code is pushed to plugin repositories (`flexorder` or `flexorder-ultimate`).
-
-### Architecture
-
-```
-┌─────────────────────────────────────────┐
-│  flexorder / flexorder-ultimate         │
-│  Plugin Repositories                     │
-└─────────────────────────────────────────┘
-                 ↓
-         Push to main/develop
-                 ↓
-    ┌────────────────────────────┐
-    │  trigger-e2e.yml           │
-    │  (in plugin repo)          │
-    └────────────────────────────┘
-                 ↓
-      Generate GitHub App Token
-                 ↓
-    Send repository_dispatch event
-                 ↓
-┌─────────────────────────────────────────┐
-│  flexorder-ci-workflow                  │
-│  CI Repository                          │
-└─────────────────────────────────────────┘
-                 ↓
-    ┌────────────────────────────┐
-    │  ci-workflow.yml           │
-    │  (in CI repo)              │
-    └────────────────────────────┘
-                 ↓
-      Run E2E tests on pushed commit
-```
-
-### Setup Instructions
-
-#### Step 1: Configure GitHub App Permissions
-
-1. Go to your GitHub App settings (Organization → Settings → GitHub Apps)
-2. Navigate to **Permissions & events** → **Repository permissions**
-3. Set **Actions** permission to **Read and write**
-4. Save changes and approve permission update
-
-#### Step 2: Verify App Installation
-
-Ensure your GitHub App is installed on all three repositories:
-
-- `WPPOOL/flexorder`
-- `WPPOOL/flexorder-ultimate`
-- `WPPOOL/flexorder-ci-workflow`
-
-#### Step 3: Add Secrets to Plugin Repositories
-
-For **both** plugin repositories (`flexorder` and `flexorder-ultimate`):
-
-1. Go to repository **Settings** → **Secrets and variables** → **Actions**
-2. Add two secrets (use the same values as in `flexorder-ci-workflow`):
-   - `APP_ID`: Your GitHub App ID
-   - `APP_PRIVATE_KEY`: Your GitHub App private key (full PEM format)
-
-#### Step 4: Deploy Trigger Workflows
-
-**For flexorder repository:**
-
-```bash
-# Copy trigger workflow template
-cp .github/flexorder_workflow/flexorder.yml \
-   /path/to/flexorder/.github/workflows/trigger-e2e.yml
-
-# Commit and push
-cd /path/to/flexorder
-git add .github/workflows/trigger-e2e.yml
-git commit -m "Add E2E test trigger workflow"
-git push origin main
-```
-
-**For flexorder-ultimate repository:**
-
-```bash
-# Copy trigger workflow template
-cp .github/flexorder_workflow/flexorder-ultimate.yml \
-   /path/to/flexorder-ultimate/.github/workflows/trigger-e2e.yml
-
-# Commit and push
-cd /path/to/flexorder-ultimate
-git add .github/workflows/trigger-e2e.yml
-git commit -m "Add E2E test trigger workflow"
-git push origin main
-```
-
-#### Step 5: Verify Configuration
-
-Run the verification script to ensure everything is configured correctly:
-
-```bash
-npm run verify:dispatch
-```
-
-Expected output:
-
-```
-✅ All checks passed! Configuration is ready for deployment.
-✅ CI workflow configured with event types: flexorder, flexorder-ultimate
-✅ GitHub App token generation step found
-✅ GitHub App credentials: secrets.APP_ID + secrets.APP_PRIVATE_KEY
-```
-
-#### Step 6: Test the Setup
-
-1. Make a test commit to `flexorder/main` or `flexorder/develop`
-2. Check the workflow runs:
-   - Plugin repo: https://github.com/WPPOOL/flexorder/actions
-   - CI repo: https://github.com/WPPOOL/flexorder-ci-workflow/actions
-3. Verify the CI workflow shows `repository_dispatch` trigger in its logs
-
-### Trigger Workflow Details
-
-The trigger workflows in plugin repositories:
-
-- Listen for pushes to `main` and `develop` branches
-- Generate a GitHub App token using `APP_ID` and `APP_PRIVATE_KEY`
-- Send a `repository_dispatch` event to `flexorder-ci-workflow`
-- Include metadata: repository name, branch, commit SHA, pusher, commit message
-
-The CI workflow receives the event and:
-
-- Detects it's a `repository_dispatch` trigger
-- Extracts the plugin branch from the event payload
-- Downloads the exact commit SHA that triggered the event
-- Runs full E2E tests against that specific version
-
-### Troubleshooting Repository Dispatch
-
-**Issue: "Resource not accessible by integration"**
-
-- GitHub App needs "Actions: Write" permission
-- Go to App settings and update permissions
-- Organization admin must approve the change
-
-**Issue: "Bad credentials"**
-
-- Verify `APP_ID` and `APP_PRIVATE_KEY` secrets are correct
-- Ensure `APP_PRIVATE_KEY` includes the full PEM format:
-  ```
-  -----BEGIN RSA PRIVATE KEY-----
-  [key content]
-  -----END RSA PRIVATE KEY-----
-  ```
-
-**Issue: CI workflow not triggered**
-
-- Check if GitHub App is installed on `flexorder-ci-workflow`
-- Verify the `event-type` matches in both trigger and CI workflows
-- Check GitHub Actions logs in both repositories
+### All npm scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm test` | Run the full E2E suite |
+| `npm run test:headed` | Run with a visible browser |
+| `npm run test:ui` | Interactive UI mode |
+| `npm run test:debug` | Debug mode (inspector) |
+| `npm run test:report` | Open the HTML report |
+| `npm run test:ci:full` | Run the suite with `CI=true` |
+| `npm run setup:ci` | Provision WordPress + test data + API keys |
+| `npm run verify:dispatch` | Validate repository-dispatch configuration |
+| `npm run lint` / `npm run lint:fix` | ESLint (check / auto-fix) |
+| `npm run format` / `npm run format:check` | Prettier (write / check) |
+| `npm run type-check` | `tsc --noEmit` type check |
+| `npm run validate` | `type-check` + `lint` + `format:check` |
+| `npm run clean` | Remove `test-results`, `playwright-report`, caches |
 
 ---
 
 ## 🏗️ Test Architecture
 
-### Test Organization
+### Execution pipeline (Playwright projects)
 
-Tests follow a **sequential execution pattern** with naming conventions:
+Ordering is enforced with Playwright **project `dependencies`** (defined in
+[`playwright.config.ts`](playwright.config.ts)), replacing the old
+alphabetical `a-`-prefix convention:
 
-- `a-*.spec.ts` - Setup and configuration tests (run first)
-- Other `*.spec.ts` - Feature tests (run after setup)
+```
+auth-setup                 → tests/auth.setup.ts (log in once → save storage state)
+      │
+      ├── plugin-setup      → specs/flexorder-setup.spec.ts   (setup wizard)
+      │        │
+      │        └── e2e      → specs/ultimateSettings.spec.ts
+      │                        specs/update-order-status.spec.ts
+      │
+      └── woocommerce-api   → specs/woocommerceAPI.spec.ts    (REST API, no browser)
+```
 
-**Execution Order:**
+Tests run **sequentially** (`fullyParallel: false`, `workers: 1`) to keep the
+shared database and Google Sheet state deterministic — for example, the
+order-status sync spec intentionally chains state across its tests.
 
-1. `a-flexorder-setup.spec.ts` - Initial plugin setup
-2. `a-activateProVersion.spec.ts` - License activation
-3. `a-woocommerceAPI.spec.ts` - API connectivity validation
-4. All other tests - Feature-specific tests
+### Active test suites
 
-### Page Object Model
+| Spec | Project | What it validates |
+|------|---------|-------------------|
+| `flexorder-setup.spec.ts` | `plugin-setup` | Completes the FlexOrder credentials + Google Sheet setup wizard |
+| `update-order-status.spec.ts` | `e2e` | Fetch, update, verify, and bulk-update WooCommerce order statuses, synced through Google Sheets |
+| `ultimateSettings.spec.ts` | `e2e` | Ultimate display settings: billing/shipping address, product columns/rows, name separators, custom fields, sorting, and filtering on Google Sheets |
 
-Tests use the **Page Object Model** pattern for maintainability:
+> `woocommerceAPI.spec.ts` and `a-active-ultimate.spec.ts` are present as
+> scaffolds (their bodies are currently commented out).
+
+### Page Object Model + fixtures
+
+UI interactions live in `src/pages/` (Page Objects); non-UI integrations live in
+`src/services/`. Shared fixtures are provided by
+[`tests/fixtures/test-fixtures.ts`](tests/fixtures/test-fixtures.ts):
+
+| Fixture | Scope | Purpose |
+|---------|-------|---------|
+| `loginPage` | test | WordPress login Page Object |
+| `setupPage` | test | FlexOrder setup-wizard Page Object |
+| `settingsPage` | test | Ultimate order-sync settings Page Object |
+| `orderStatusUpdater` | worker | Sheets ↔ WooCommerce status-sync service |
+| `googleSheetAPI` | worker | Google Sheets API client |
+| `sheetHelper` | worker | Google Sheets test helpers |
 
 ```typescript
-// Example: Using LoginPage
-import { LoginPage } from '../../src/pages/login';
+import { test, expect } from '../fixtures/test-fixtures';
 
-test('my test', async ({ page }) => {
-  const loginPage = new LoginPage(page);
-  await loginPage.navigate();
-  await loginPage.login();
-  // ... rest of test
+test('sync order status', async ({ orderStatusUpdater }) => {
+  const status = await orderStatusUpdater.getCurrentStatus(orderId);
+  expect(status).toBeDefined();
 });
 ```
 
-### Test Fixtures
+---
 
-Custom fixtures provide reusable test utilities:
+## 🔄 CI/CD Pipeline
 
-```typescript
-import { test, expect } from '../fixtures/orderFixtures';
+The pipeline is defined in
+[`.github/workflows/ci-workflow.yml`](.github/workflows/ci-workflow.yml).
 
-test('create order', async ({ createOrderInstance }) => {
-  const order = await createOrderInstance.createOrder(orderData);
-  expect(order.id).toBeDefined();
-});
+### Triggers
+
+- **Push** to `main` or `qa`
+- **`repository_dispatch`** events (`flexorder`, `flexorder-ultimate`) from the plugin repos
+- **Manual** via `workflow_dispatch`
+- **Scheduled** daily run (available, commented out by default)
+
+### Stages
+
+1. **Setup** — checkout, Node.js, npm install, Playwright browsers, caching
+2. **Docker** — start WordPress + MySQL (phpMyAdmin/MailHog via `dev` profile)
+3. **WordPress install** — WP core + WooCommerce via WP-CLI
+4. **Plugin deploy** — download FlexOrder Free & Ultimate (GitHub App token) for the pushed SHA
+5. **Provision** — `setup-ci-environment.ts` creates data and API keys
+6. **Test** — run the full Playwright suite
+7. **Report** — upload HTML/JUnit/screenshots/videos; optional Email & Slack notifications
+8. **Cleanup** — tear down project-scoped Docker resources
+
+### Required secrets & variables
+
+Configured under **Settings → Secrets and variables → Actions**. Full table,
+descriptions, and a scripted setup helper are in
+[`docs/CI_SECRETS_AND_VARIABLES.md`](docs/CI_SECRETS_AND_VARIABLES.md).
+
+| Secret | Required | Purpose |
+|--------|----------|---------|
+| `APP_ID`, `APP_PRIVATE_KEY` | ✅ (for CI) | GitHub App token to download the private FlexOrder plugins |
+| `GOOGLE_SHEET_URL`, `SHEET_NAME` | ➖ | Google Sheets tests |
+| `FLEXORDER_PRO_LICENSE_KEY` | ➖ | Pro-gated specs |
+| `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_TO` | ➖ | Email report notifications |
+| `SLACK_WEBHOOK_URL` | ➖ | Slack notifications |
+
+WordPress admin/URL values (`WORDPRESS_URL`, `WORDPRESS_ADMIN_USER`, etc.) are
+throwaway defaults hard-coded in the workflow's `env:` block for the ephemeral CI
+container.
+
+### Self-hosted runner
+
+The pipeline uses `runs-on: self-hosted`. See
+[`docs/self-hosted-runner-setup.md`](docs/self-hosted-runner-setup.md) and the
+PowerShell helpers in `scripts/` for registering a Windows runner.
+
+> **Running on a personal fork?** The workflow expects a self-hosted runner and
+> access to the private `WPPOOL/flexorder` and `WPPOOL/flexorder-ultimate` repos,
+> so it won't run as-is on a public fork without your own runner and plugin
+> access (or adapting it to `ubuntu-latest` with public/mock plugins).
+
+---
+
+## 🔗 Repository Dispatch Setup
+
+The plugin repositories trigger this CI repo automatically when code is pushed:
+
 ```
+Push to flexorder (main/develop)
+        ↓
+trigger-e2e.yml (in plugin repo) → generates GitHub App token
+        ↓
+Sends repository_dispatch → this repo
+        ↓
+ci-workflow.yml runs E2E tests against the pushed commit
+```
+
+**Setup summary** (details in each plugin repo):
+
+1. Give the GitHub App **Actions: Read & write** permission and install it on all repos.
+2. Add `APP_ID` and `APP_PRIVATE_KEY` secrets to the plugin repos.
+3. Copy the trigger template into each plugin repo:
+   ```bash
+   cp .github/flexorder_workflow/flexorder.yml \
+      /path/to/flexorder/.github/workflows/trigger-e2e.yml
+   ```
+4. Verify the wiring:
+   ```bash
+   npm run verify:dispatch
+   ```
+
+---
+
+## 📚 Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [`docs/EXECUTION_GUIDE.md`](docs/EXECUTION_GUIDE.md) | Step-by-step execution guide |
+| [`docs/CI_SECRETS_AND_VARIABLES.md`](docs/CI_SECRETS_AND_VARIABLES.md) | All CI secrets & variables (+ `gh` setup script) |
+| [`docs/self-hosted-runner-setup.md`](docs/self-hosted-runner-setup.md) | Self-hosted runner setup |
+| [`docs/ci-workflow-diagram.md`](docs/ci-workflow-diagram.md) | CI workflow diagram |
+| [`docs/WOOCOMMERCE_API_CREDENTIALS_GUIDE.md`](docs/WOOCOMMERCE_API_CREDENTIALS_GUIDE.md) | How WooCommerce API keys are generated & loaded |
+| [`docs/FILE_MAPPING.md`](docs/FILE_MAPPING.md) | File/responsibility map |
+| [`docs/REFACTORING_NOTES.md`](docs/REFACTORING_NOTES.md) | Refactoring notes |
+| [`docs/playwright-best-practice-memory.md`](docs/playwright-best-practice-memory.md) | Playwright best practices |
+| [`docs/BEGINNER_AUTOMATION_EXECUTION_GUIDE_BN.md`](docs/BEGINNER_AUTOMATION_EXECUTION_GUIDE_BN.md) | Beginner execution guide (Bangla) |
+| [`docs/HANDOVER_SCRIPT_BN.md`](docs/HANDOVER_SCRIPT_BN.md) | Handover script (Bangla) |
 
 ---
 
 ## 🐛 Troubleshooting
 
-### WordPress Not Accessible
-
+**WordPress not accessible**
 ```bash
-# Check Docker services
 docker compose -f docker-compose.fresh-wordpress.yml ps
-
-# View WordPress logs
 docker logs flexorder-wordpress
-
-# Restart services
 docker compose -f docker-compose.fresh-wordpress.yml restart
 ```
 
-### API Keys Not Generated
-
+**API keys not generated**
 ```bash
-# Manually run setup script
 npm run setup:ci
-
-# Check generated keys
-cat tests/utilities/api-keys.json
+cat tests/fixtures/api-keys.json
 ```
 
-### Tests Timing Out
+**Tests timing out** — increase `TIMEOUT_SECONDS`, check Docker resource limits, and ensure WordPress is fully healthy before running.
 
-- Increase timeouts in `playwright.config.ts`
-- Check Docker resource allocation
-- Ensure WordPress is fully loaded before running tests
+**Google Sheets tests failing** — confirm the service account has **Editor**
+access, `SERVICE_ACCOUNT_UPLOAD_FILE` points to a valid key, and the Sheets API
+is enabled.
 
-### Google Sheets Tests Failing
+**Flaky tests** — the custom reporter records unstable tests under `flaky-tests/`
+for review.
 
-- Verify service account has **Editor** access to the sheet
-- Check `SERVICE_ACCOUNT_UPLOAD_FILE` path is correct
-- Ensure Google Sheets API is enabled in GCP
-
-### Flaky Tests
-
-Flaky tests are automatically detected and saved to `flaky-tests/` directory. Review these files to identify unstable tests.
-
-### Repository Dispatch Not Triggering CI
-
-**Symptoms:** Push to plugin repo doesn't trigger CI workflow
-
-**Checks:**
-
-1. Verify trigger workflow exists in plugin repo at `.github/workflows/trigger-e2e.yml`
-2. Check GitHub Actions logs in plugin repository for workflow execution
-3. Ensure `APP_ID` and `APP_PRIVATE_KEY` secrets are set in plugin repository
-4. Verify GitHub App has "Actions: Write" permission
-5. Confirm GitHub App is installed on `flexorder-ci-workflow` repository
-
-**Debug:**
-
-```bash
-# Check CI workflow logs
-# Look for "repository_dispatch" event in "Display Workflow Information" step
-
-# Verify configuration
-npm run verify:dispatch
-```
-
-### IDE Showing Errors in ci-workflow.yml
-
-If your IDE shows "Unable to resolve action" errors for GitHub Actions (like `actions/checkout@v4`), these are **false positives**. The actions are valid and the workflow will run correctly.
-
-**Solutions:**
-
-1. **Install recommended VS Code extensions:**
-   - Open VS Code Command Palette (Cmd/Ctrl + Shift + P)
-   - Type: "Extensions: Show Recommended Extensions"
-   - Install "GitHub Actions" extension
-
-2. **Reload VS Code:** The `.vscode/settings.json` file configures YAML schema validation
-
-3. **If errors persist:** These are cosmetic only and can be safely ignored. Your CI/CD will work perfectly.
+**Repository dispatch not triggering** — verify the trigger workflow exists in
+the plugin repo, the `APP_ID`/`APP_PRIVATE_KEY` secrets are set, and the GitHub
+App has *Actions: Write* and is installed on this repo. Then re-run
+`npm run verify:dispatch`.
 
 ---
 
 ## 🤝 Contributing
 
-### Development Workflow
+```bash
+git checkout -b feature/your-feature
+# make changes, then:
+npm run validate    # type-check + lint + format:check
+npm test
+```
 
-1. **Create a feature branch**
-
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. **Write tests** following existing patterns
-
-3. **Run linter and formatter**
-
-   ```bash
-   npm run lint
-   npm run format
-   npm run type-check
-   ```
-
-4. **Run tests locally**
-
-   ```bash
-   npm test
-   ```
-
-5. **Commit changes** with descriptive messages
-
-6. **Push and create PR**
-
-### Code Quality
-
-- **ESLint**: `npm run lint`
-- **Prettier**: `npm run format`
-- **TypeScript**: `npm run type-check`
-- **Validation**: `npm run validate` (runs all checks)
-
-### Adding New Tests
-
-1. Create test file in `tests/specs/`
-2. Follow existing naming conventions
-3. Use Page Object Models from `src/pages/`
-4. Add appropriate assertions
-5. Document test purpose and requirements
+- Add new specs under `tests/specs/` and wire them into the appropriate project in `playwright.config.ts`.
+- Reuse Page Objects (`src/pages/`) and services (`src/services/`) rather than duplicating selectors/logic.
+- Keep secrets out of the repo — use `.env` locally and GitHub Secrets in CI.
 
 ---
 
-## 📄 License
+## 📝 About & License
 
-This project is proprietary software owned by WPPOOL.
+This is a **QA automation portfolio project** demonstrating a production-style
+Playwright + TypeScript E2E framework with a full Docker + GitHub Actions CI/CD
+pipeline. **FlexOrder** is a commercial WordPress plugin by
+[WPPOOL](https://wppool.dev/); this repository contains only the automated
+testing framework.
 
----
+Maintained by **Rakibul Islam**. Issues and questions:
+[GitHub Issues](https://github.com/RakibulIslam39/FlexOrder-e2e-Automation-with-CI-CD/issues).
 
-## 📞 Support
+### Useful references
 
-For issues and questions:
-
-- **GitHub Issues**: [Report a bug](https://github.com/wppool/flexorder-e2e-automation/issues)
-- **Internal Team**: Contact the QA team
-
----
-
-## 📚 Additional Resources
-
-- [Playwright Documentation](https://playwright.dev/)
-- [WordPress CLI](https://wp-cli.org/)
-- [WooCommerce REST API](https://woocommerce.github.io/woocommerce-rest-api-docs/)
-- [Google Sheets API](https://developers.google.com/sheets/api)
-
----
-
-**Made with ❤️ by WPPOOL QA Team**
+- [Playwright](https://playwright.dev/) · [WP-CLI](https://wp-cli.org/) · [WooCommerce REST API](https://woocommerce.github.io/woocommerce-rest-api-docs/) · [Google Sheets API](https://developers.google.com/sheets/api)
